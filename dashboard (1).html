@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Dashboard — SMAEK</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <script src="script.js"></script>
+  <script src="sidebar.js"></script>
+  <script>
+    const sess = requireAuth();
+    injectSidebar('dashboard');
+    renderSidebarUser(sess);
+    seedData();
+  </script>
+
+  <main class="main">
+    <div class="page-header">
+      <div class="page-header-left">
+        <h1>Dashboard</h1>
+        <p id="greetEl">// selamat datang</p>
+      </div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--text3)" id="dateEl"></div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid" id="statsGrid"></div>
+
+    <!-- Two columns -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+      <!-- Aktivitas terbaru -->
+      <div class="card card-pad">
+        <div style="font-family:var(--mono);font-size:12px;font-weight:700;margin-bottom:14px;letter-spacing:-.01em">Anggota Terbaru</div>
+        <div id="recentAnggota"></div>
+      </div>
+      <!-- Prestasi -->
+      <div class="card card-pad">
+        <div style="font-family:var(--mono);font-size:12px;font-weight:700;margin-bottom:14px">Prestasi Terkini</div>
+        <div id="recentPrestasi"></div>
+      </div>
+    </div>
+
+    <!-- Disiplin & Pelanggaran -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="card card-pad">
+        <div style="font-family:var(--mono);font-size:12px;font-weight:700;margin-bottom:14px">Disiplin Terkini</div>
+        <div id="recentDisiplin"></div>
+      </div>
+      <div class="card card-pad">
+        <div style="font-family:var(--mono);font-size:12px;font-weight:700;margin-bottom:14px">Latihan Terkini</div>
+        <div id="recentLatihan"></div>
+      </div>
+    </div>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    document.getElementById('greetEl').textContent = `// selamat datang, ${sess.name}`;
+    document.getElementById('dateEl').textContent = new Date().toLocaleDateString('id-ID',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+
+    function render() {
+      const anggota = getData('anggota');
+      const prestasi = getData('prestasi');
+      const disiplin = getData('disiplin');
+      const latihan = getData('latihan');
+      const pelanggaran = getData('pelanggaran');
+
+      const inti = anggota.filter(a=>a.jenis==='Anggota Inti');
+      const bonus = anggota.filter(a=>a.bonus==='Ya');
+      const totalPoin = prestasi.reduce((s,p)=>s+(p.poin||0),0);
+
+      document.getElementById('statsGrid').innerHTML = `
+        <div class="stat-card hi">
+          <div class="stat-label">Total Anggota</div>
+          <div class="stat-value">${anggota.length}</div>
+          <div class="stat-sub">terdaftar</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Anggota Inti</div>
+          <div class="stat-value">${inti.length}</div>
+          <div class="stat-sub">dari ${anggota.length} anggota</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Prestasi</div>
+          <div class="stat-value">${prestasi.length}</div>
+          <div class="stat-sub">${totalPoin} poin</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Pelanggaran</div>
+          <div class="stat-value">${pelanggaran.length}</div>
+          <div class="stat-sub">tercatat</div>
+        </div>
+      `;
+
+      const mkRow = (name, right, sub='') => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+          <div>
+            <div style="font-size:13px;font-weight:600">${name}</div>
+            ${sub?`<div style="font-size:11px;color:var(--text3);font-family:var(--mono)">${sub}</div>`:''}
+          </div>
+          <div>${right}</div>
+        </div>`;
+
+      document.getElementById('recentAnggota').innerHTML = anggota.slice(-4).reverse().map(a=>
+        mkRow(a.nama, `<span class="badge ${a.jenis==='Anggota Inti'?'badge-white':'badge-outline'}">${a.jenis==='Anggota Inti'?'INTI':'BIASA'}</span>`, a.kelas)
+      ).join('') || '<div class="empty"><p>Belum ada data</p></div>';
+
+      document.getElementById('recentPrestasi').innerHTML = prestasi.slice(-4).reverse().map(p=>
+        mkRow(p.judul, `<span class="badge badge-warning">${p.tingkat}</span>`, p.nama)
+      ).join('') || '<div class="empty"><p>Belum ada prestasi</p></div>';
+
+      document.getElementById('recentDisiplin').innerHTML = disiplin.slice(-4).reverse().map(d=>
+        mkRow(d.nama, `<span class="badge badge-danger">${d.jenis}</span>`, d.tanggal)
+      ).join('') || '<div class="empty"><p>Tidak ada catatan</p></div>';
+
+      document.getElementById('recentLatihan').innerHTML = latihan.slice(-4).reverse().map(l=>
+        mkRow(l.materi, `<span class="badge badge-info">${l.durasi}m</span>`, l.tanggal + ' · ' + (l.peserta||[]).length + ' peserta')
+      ).join('') || '<div class="empty"><p>Belum ada latihan</p></div>';
+    }
+    render();
+  </script>
+</body>
+</html>

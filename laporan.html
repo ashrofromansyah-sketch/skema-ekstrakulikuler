@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Laporan Anggota — SMAEK</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    @media print {
+      .sidebar, .no-print { display: none !important; }
+      .main { margin-left: 0 !important; }
+      body { background: white !important; color: black !important; }
+      .card { border: 1px solid #ccc !important; background: white !important; }
+      table thead th, tbody td { color: black !important; }
+    }
+  </style>
+</head>
+<body>
+  <script src="script.js"></script>
+  <script src="sidebar.js"></script>
+  <script>
+    const sess = requireAuth();
+    injectSidebar('laporan');
+    renderSidebarUser(sess);
+    seedData();
+  </script>
+
+  <main class="main">
+    <div class="page-header no-print">
+      <div class="page-header-left">
+        <h1>Laporan Anggota</h1>
+        <p>// ringkasan lengkap per anggota</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-ghost" onclick="exportCSV()">↓ Export CSV</button>
+        <button class="btn btn-primary" onclick="window.print()">🖨 Cetak</button>
+      </div>
+    </div>
+
+    <!-- Pilih anggota -->
+    <div class="card card-pad no-print" style="margin-bottom:20px">
+      <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+        <div style="font-family:var(--mono);font-size:11px;color:var(--text3)">Pilih Anggota:</div>
+        <select class="sel" id="selAnggota" onchange="renderLaporan()" style="min-width:220px">
+          <option value="">-- Semua Anggota --</option>
+        </select>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--text3)">Periode:</div>
+        <input type="month" class="sel" id="selBulan" onchange="renderLaporan()"/>
+      </div>
+    </div>
+
+    <!-- Laporan content -->
+    <div id="laporanContent"></div>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    function init() {
+      const sel = document.getElementById('selAnggota');
+      getData('anggota').forEach(a => {
+        const o = document.createElement('option');
+        o.value = a.id; o.textContent = `${a.nama} (${a.kelas})`;
+        sel.appendChild(o);
+      });
+      const now = new Date();
+      document.getElementById('selBulan').value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+      renderLaporan();
+    }
+
+    function renderLaporan() {
+      const selId = parseInt(document.getElementById('selAnggota').value) || null;
+      const bulan = document.getElementById('selBulan').value; // YYYY-MM
+      const anggota = selId ? getData('anggota').filter(a=>a.id===selId) : getData('anggota');
+
+      const allLatihan = getData('latihan');
+      const allDisiplin = getData('disiplin');
+      const allPrestasi = getData('prestasi');
+      const allPelanggaran = getData('pelanggaran');
+
+      function filterByBulan(arr, field='tanggal') {
+        return bulan ? arr.filter(x => x[field] && x[field].startsWith(bulan)) : arr;
+      }
+
+      const content = document.getElementById('laporanContent');
+
+      if (!anggota.length) {
+        content.innerHTML = '<div class="empty"><p>Tidak ada anggota</p></div>';
+        return;
+      }
+
+      // Summary table
+      const summaryRows = anggota.map(a => {
+        const latHadir = filterByBulan(allLatihan).filter(l=>(l.peserta||[]).includes(a.id)).length;
+        const totalLat = filterByBulan(allLatihan).length;
+        const disiplin = filterByBulan(allDisiplin).filter(d=>d.anggotaId===a.id).length;
+        const prestasi = filterByBulan(allPrestasi).filter(p=>p.anggotaId===a.id);
+        const totalPoin = prestasi.reduce((s,p)=>s+(+p.poin||0),0);
+        const pelanggaran = filterByBulan(allPelanggaran).filter(p=>p.anggotaId===a.id).length;
+        const pct = totalLat ? Math.round(latHadir/totalLat*100) : 0;
+
+        function getStatus() {
+          if (pelanggaran > 0 && disiplin > 2) return {label:'PERLU PERHATIAN', cls:'badge-danger'};
+          if (pct >= 80 && totalPoin > 0) return {label:'BERPRESTASI', cls:'badge-success'};
+          if (pct >= 60) return {label:'AKTIF', cls:'badge-info'};
+          return {label:'KURANG AKTIF', cls:'badge-warning'};
+        }
+        const st = getStatus();
+        return {a, latHadir, totalLat, pct, disiplin, totalPoin, pelanggaran, st};
+      });
+
+      content.innerHTML = `
+        <!-- Summary -->
+        <div class="card" style="margin-bottom:20px">
+          <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:12px;font-weight:700">
+            Ringkasan ${bulan || 'Semua Periode'}
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th><th>Nama</th><th>Kelas</th><th>Jenis</th>
+                  <th>Kehadiran</th><th>Disiplin</th><th>Pelanggaran</th><th>Total Poin</th><th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${summaryRows.map((r,i)=>`
+                  <tr>
+                    <td style="color:var(--text3);font-family:var(--mono);font-size:11px">${i+1}</td>
+                    <td><strong>${r.a.nama}</strong></td>
+                    <td style="font-family:var(--mono);font-size:11px">${r.a.kelas}</td>
+                    <td><span class="badge ${r.a.jenis==='Anggota Inti'?'badge-white':'badge-outline'}">${r.a.jenis==='Anggota Inti'?'INTI':'BIASA'}</span></td>
+                    <td>
+                      <div style="font-family:var(--mono);font-size:12px">${r.latHadir}/${r.totalLat}</div>
+                      <div style="height:3px;background:var(--bg4);border-radius:2px;overflow:hidden;margin-top:3px;width:60px">
+                        <div style="height:100%;width:${r.pct}%;background:${r.pct>=80?'var(--success)':r.pct>=50?'var(--warning)':'var(--danger)'};border-radius:2px"></div>
+                      </div>
+                    </td>
+                    <td style="font-family:var(--mono);font-size:12px;color:${r.disiplin>2?'var(--danger)':'var(--text)'}">${r.disiplin}x</td>
+                    <td style="font-family:var(--mono);font-size:12px;color:${r.pelanggaran>0?'var(--danger)':'var(--text3)'}">${r.pelanggaran}x</td>
+                    <td style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--warning)">${r.totalPoin}</td>
+                    <td><span class="badge ${r.st.cls}" style="font-size:9px">${r.st.label}</span></td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        ${selId ? renderDetailAnggota(summaryRows[0], bulan, allLatihan, allDisiplin, allPrestasi, allPelanggaran) : ''}
+      `;
+    }
+
+    function renderDetailAnggota(r, bulan, allLatihan, allDisiplin, allPrestasi, allPelanggaran) {
+      function filterByBulan(arr) {
+        return bulan ? arr.filter(x => x.tanggal && x.tanggal.startsWith(bulan)) : arr;
+      }
+      const latihan = filterByBulan(allLatihan).filter(l=>(l.peserta||[]).includes(r.a.id));
+      const disiplin = filterByBulan(allDisiplin).filter(d=>d.anggotaId===r.a.id);
+      const prestasi = filterByBulan(allPrestasi).filter(p=>p.anggotaId===r.a.id);
+      const pelanggaran = filterByBulan(allPelanggaran).filter(p=>p.anggotaId===r.a.id);
+
+      return `
+        <div class="card card-pad">
+          <div style="font-family:var(--mono);font-size:13px;font-weight:700;margin-bottom:20px;padding-bottom:12px;border-bottom:1px solid var(--border)">
+            Detail — ${r.a.nama} · ${r.a.kelas}
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+            <div>
+              <div style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-bottom:10px">LATIHAN DIIKUTI</div>
+              ${latihan.length ? latihan.map(l=>`
+                <div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">
+                  <strong>${l.materi}</strong>
+                  <span style="color:var(--text3);font-family:var(--mono);font-size:10px;margin-left:8px">${l.tanggal}</span>
+                </div>`).join('') : '<p style="font-size:12px;color:var(--text3)">Tidak ada</p>'}
+            </div>
+            <div>
+              <div style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-bottom:10px">PRESTASI</div>
+              ${prestasi.length ? prestasi.map(p=>`
+                <div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:12px;display:flex;justify-content:space-between">
+                  <span>${p.judul}</span>
+                  <span class="badge badge-warning" style="font-size:9px">${p.poin} poin</span>
+                </div>`).join('') : '<p style="font-size:12px;color:var(--text3)">Belum ada</p>'}
+              <div style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-top:16px;margin-bottom:10px">CATATAN DISIPLIN</div>
+              ${disiplin.length ? disiplin.map(d=>`
+                <div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">
+                  <span class="badge badge-warning" style="font-size:9px">${d.jenis}</span>
+                  <span style="margin-left:8px;color:var(--text2)">${d.keterangan}</span>
+                </div>`).join('') : '<p style="font-size:12px;color:var(--text3)">Tidak ada</p>'}
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function exportCSV() {
+      const anggota = getData('anggota');
+      const allLatihan = getData('latihan');
+      const allDisiplin = getData('disiplin');
+      const allPrestasi = getData('prestasi');
+      const allPelanggaran = getData('pelanggaran');
+
+      const rows = [['Nama','Kelas','Jenis','Disiplin','Bonus','Kehadiran','Total Catatan Disiplin','Total Prestasi','Total Poin','Total Pelanggaran']];
+      anggota.forEach(a => {
+        const hadir = allLatihan.filter(l=>(l.peserta||[]).includes(a.id)).length;
+        const disiplin = allDisiplin.filter(d=>d.anggotaId===a.id).length;
+        const prestasi = allPrestasi.filter(p=>p.anggotaId===a.id);
+        const poin = prestasi.reduce((s,p)=>s+(+p.poin||0),0);
+        const pelanggaran = allPelanggaran.filter(p=>p.anggotaId===a.id).length;
+        rows.push([a.nama,a.kelas,a.jenis,a.disiplin||'-',a.bonus,`${hadir}/${allLatihan.length}`,disiplin,prestasi.length,poin,pelanggaran]);
+      });
+      const csv = rows.map(r=>r.join(',')).join('\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+      a.download='laporan-anggota.csv'; a.click();
+      showToast('CSV diunduh ✓');
+    }
+
+    init();
+  </script>
+</body>
+</html>

@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Anggota — SMAEK</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <script src="script.js"></script>
+  <script src="sidebar.js"></script>
+  <script>
+    const sess = requireAuth();
+    injectSidebar('anggota');
+    renderSidebarUser(sess);
+    seedData();
+  </script>
+
+  <main class="main">
+    <div class="page-header">
+      <div class="page-header-left">
+        <h1>Anggota</h1>
+        <p>// kelola data anggota ekstrakurikuler</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-ghost" onclick="exportCSV()">↓ CSV</button>
+        <button class="btn btn-primary admin-only" onclick="openAdd()">+ Tambah</button>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <div class="search-box">
+        <span class="si">🔍</span>
+        <input type="text" id="q" placeholder="Cari nama atau kelas..." oninput="render()"/>
+      </div>
+      <select class="sel" id="fJenis" onchange="render()">
+        <option value="">Semua Jenis</option>
+        <option>Anggota Inti</option>
+        <option>Anggota Biasa</option>
+      </select>
+      <select class="sel" id="fBonus" onchange="render()">
+        <option value="">Semua Bonus</option>
+        <option value="Ya">Dapat Bonus</option>
+        <option value="Tidak">Tidak</option>
+      </select>
+      <select class="sel" id="fDisiplin" onchange="render()">
+        <option value="">Semua Disiplin</option>
+        <option>Baik</option>
+        <option>Cukup</option>
+        <option>Kurang</option>
+      </select>
+      <span id="countLabel" style="font-size:11px;color:var(--text3);font-family:var(--mono);white-space:nowrap"></span>
+    </div>
+
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Nama</th>
+              <th>Kelas</th>
+              <th>Jenis</th>
+              <th>Disiplin</th>
+              <th>Bonus</th>
+              <th>Bergabung</th>
+              <th class="admin-only">Aksi</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <!-- Modal Tambah/Edit -->
+  <div class="modal-overlay" id="modalAdd" onclick="if(event.target===this)closeModal('modalAdd')">
+    <div class="modal">
+      <h2 id="modalTitle">Tambah Anggota</h2>
+      <input type="hidden" id="editId"/>
+      <div class="form-row">
+        <div class="form-field">
+          <label>Nama Lengkap</label>
+          <input type="text" id="fNama" placeholder="Nama anggota"/>
+        </div>
+        <div class="form-field">
+          <label>Kelas</label>
+          <input type="text" id="fKelas" placeholder="Contoh: X-A"/>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-field">
+          <label>Jenis Anggota</label>
+          <select id="fJenisM">
+            <option>Anggota Inti</option>
+            <option>Anggota Biasa</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>Disiplin</label>
+          <select id="fDisiplinM">
+            <option>Baik</option>
+            <option>Cukup</option>
+            <option>Kurang</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-field">
+          <label>Bonus</label>
+          <select id="fBonus2">
+            <option value="Ya">Ya</option>
+            <option value="Tidak">Tidak</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>Tanggal Bergabung</label>
+          <input type="date" id="fBergabung"/>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('modalAdd')">Batal</button>
+        <button class="btn btn-primary" onclick="save()">Simpan</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const isAdmin = sess.role === 'admin';
+    if (isAdmin) document.querySelectorAll('.admin-only').forEach(e => e.style.display = '');
+
+    const DISIPLIN_BADGE = { Baik:'badge-success', Cukup:'badge-warning', Kurang:'badge-danger' };
+
+    function render() {
+      const q = document.getElementById('q').value.toLowerCase();
+      const fj = document.getElementById('fJenis').value;
+      const fb = document.getElementById('fBonus').value;
+      const fd = document.getElementById('fDisiplin').value;
+      let data = getData('anggota').filter(d => {
+        return (!q || d.nama.toLowerCase().includes(q) || d.kelas.toLowerCase().includes(q))
+          && (!fj || d.jenis === fj)
+          && (!fb || d.bonus === fb)
+          && (!fd || d.disiplin === fd);
+      });
+      document.getElementById('countLabel').textContent = `${data.length} anggota`;
+      const tbody = document.getElementById('tbody');
+      if (!data.length) {
+        tbody.innerHTML = `<tr><td colspan="8"><div class="empty"><div class="empty-icon">👥</div><p>Tidak ada anggota ditemukan</p></div></td></tr>`;
+        return;
+      }
+      tbody.innerHTML = data.map((d, i) => `
+        <tr>
+          <td style="color:var(--text3);font-family:var(--mono);font-size:11px">${i+1}</td>
+          <td><strong>${d.nama}</strong></td>
+          <td style="font-family:var(--mono);font-size:12px">${d.kelas}</td>
+          <td><span class="badge ${d.jenis==='Anggota Inti'?'badge-white':'badge-outline'}">${d.jenis==='Anggota Inti'?'INTI':'BIASA'}</span></td>
+          <td><span class="badge ${DISIPLIN_BADGE[d.disiplin]||'badge-outline'}">${d.disiplin||'-'}</span></td>
+          <td><span class="badge ${d.bonus==='Ya'?'badge-success':'badge-outline'}">${d.bonus}</span></td>
+          <td style="font-family:var(--mono);font-size:11px;color:var(--text3)">${d.bergabung||'-'}</td>
+          <td class="admin-only">
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-ghost btn-sm" onclick="edit(${d.id})">Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="del(${d.id})">Hapus</button>
+            </div>
+          </td>
+        </tr>`).join('');
+      if (isAdmin) document.querySelectorAll('.admin-only').forEach(e => e.style.display = '');
+    }
+
+    function openAdd() {
+      document.getElementById('modalTitle').textContent = 'Tambah Anggota';
+      document.getElementById('editId').value = '';
+      document.getElementById('fNama').value = '';
+      document.getElementById('fKelas').value = '';
+      document.getElementById('fJenisM').value = 'Anggota Inti';
+      document.getElementById('fDisiplinM').value = 'Baik';
+      document.getElementById('fBonus2').value = 'Ya';
+      document.getElementById('fBergabung').value = new Date().toISOString().split('T')[0];
+      openModal('modalAdd');
+    }
+
+    function edit(id) {
+      const d = getData('anggota').find(x => x.id === id);
+      document.getElementById('modalTitle').textContent = 'Edit Anggota';
+      document.getElementById('editId').value = id;
+      document.getElementById('fNama').value = d.nama;
+      document.getElementById('fKelas').value = d.kelas;
+      document.getElementById('fJenisM').value = d.jenis;
+      document.getElementById('fDisiplinM').value = d.disiplin || 'Baik';
+      document.getElementById('fBonus2').value = d.bonus;
+      document.getElementById('fBergabung').value = d.bergabung || '';
+      openModal('modalAdd');
+    }
+
+    function save() {
+      const nama = document.getElementById('fNama').value.trim();
+      const kelas = document.getElementById('fKelas').value.trim();
+      if (!nama || !kelas) { showToast('Nama dan kelas wajib diisi', 'error'); return; }
+      const jenis = document.getElementById('fJenisM').value;
+      const disiplin = document.getElementById('fDisiplinM').value;
+      const bonus = document.getElementById('fBonus2').value;
+      const bergabung = document.getElementById('fBergabung').value;
+      const editId = parseInt(document.getElementById('editId').value) || null;
+      let data = getData('anggota');
+      if (editId) {
+        data = data.map(d => d.id === editId ? {...d, nama, kelas, jenis, disiplin, bonus, bergabung} : d);
+        showToast('Anggota diperbarui ✓');
+      } else {
+        data.push({id: nextId(data), nama, kelas, jenis, disiplin, bonus, bergabung});
+        showToast('Anggota ditambahkan ✓');
+      }
+      saveData('anggota', data);
+      closeModal('modalAdd');
+      render();
+    }
+
+    function del(id) {
+      if (!confirm('Hapus anggota ini?')) return;
+      saveData('anggota', getData('anggota').filter(d => d.id !== id));
+      render();
+      showToast('Anggota dihapus', 'error');
+    }
+
+    function exportCSV() {
+      const data = getData('anggota');
+      const rows = [['No','Nama','Kelas','Jenis','Disiplin','Bonus','Bergabung'],
+        ...data.map((d,i) => [i+1,d.nama,d.kelas,d.jenis,d.disiplin||'-',d.bonus,d.bergabung||'-'])];
+      const csv = rows.map(r=>r.join(',')).join('\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+      a.download = 'anggota.csv'; a.click();
+      showToast('CSV diunduh ✓');
+    }
+
+    render();
+  </script>
+</body>
+</html>

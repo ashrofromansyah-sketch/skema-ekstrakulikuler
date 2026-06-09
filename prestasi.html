@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Prestasi — SMAEK</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <script src="script.js"></script>
+  <script src="sidebar.js"></script>
+  <script>
+    const sess = requireAuth();
+    injectSidebar('prestasi');
+    renderSidebarUser(sess);
+    seedData();
+  </script>
+
+  <main class="main">
+    <div class="page-header">
+      <div class="page-header-left">
+        <h1>Prestasi</h1>
+        <p>// rekap pencapaian dan tingkat prestasi anggota</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-primary admin-only" onclick="openAdd()">+ Tambah Prestasi</button>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid" id="statsGrid"></div>
+
+    <!-- Tingkat Prestasi Ranking -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+      <div class="card card-pad">
+        <div style="font-family:var(--mono);font-size:12px;font-weight:700;margin-bottom:16px">🏆 Ranking Poin Anggota</div>
+        <div id="rankingList"></div>
+      </div>
+      <div class="card card-pad">
+        <div style="font-family:var(--mono);font-size:12px;font-weight:700;margin-bottom:16px">📊 Distribusi Tingkat</div>
+        <div id="tingkatChart"></div>
+      </div>
+    </div>
+
+    <!-- Table -->
+    <div class="card">
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <div class="search-box" style="max-width:260px">
+          <span class="si">🔍</span>
+          <input type="text" id="q" placeholder="Cari prestasi..." oninput="render()"/>
+        </div>
+        <select class="sel" id="fTingkat" onchange="render()">
+          <option value="">Semua Tingkat</option>
+          <option>Sekolah</option>
+          <option>Kecamatan</option>
+          <option>Kota</option>
+          <option>Provinsi</option>
+          <option>Nasional</option>
+          <option>Internasional</option>
+        </select>
+        <span id="countLabel" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>Nama Anggota</th><th>Judul Prestasi</th><th>Tanggal</th><th>Tingkat</th><th>Poin</th><th class="admin-only">Aksi</th></tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <div class="modal-overlay" id="modalAdd" onclick="if(event.target===this)closeModal('modalAdd')">
+    <div class="modal">
+      <h2 id="modalTitle">Tambah Prestasi</h2>
+      <input type="hidden" id="editId"/>
+      <div class="form-field">
+        <label>Anggota</label>
+        <select id="fAnggota"></select>
+      </div>
+      <div class="form-field">
+        <label>Judul Prestasi</label>
+        <input type="text" id="fJudul" placeholder="Contoh: Juara 1 Lomba Regional"/>
+      </div>
+      <div class="form-row">
+        <div class="form-field">
+          <label>Tanggal</label>
+          <input type="date" id="fTanggal"/>
+        </div>
+        <div class="form-field">
+          <label>Tingkat</label>
+          <select id="fTingkatM">
+            <option>Sekolah</option>
+            <option>Kecamatan</option>
+            <option>Kota</option>
+            <option>Provinsi</option>
+            <option>Nasional</option>
+            <option>Internasional</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-field">
+        <label>Poin Prestasi</label>
+        <input type="number" id="fPoin" placeholder="50" min="0"/>
+        <div style="font-size:10px;color:var(--text3);font-family:var(--mono);margin-top:4px">
+          Panduan: Sekolah=50 · Kota=100 · Provinsi=200 · Nasional=500 · Internasional=1000
+        </div>
+      </div>
+      <div class="form-field">
+        <label>Keterangan</label>
+        <textarea id="fKet" placeholder="Detail prestasi..."></textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('modalAdd')">Batal</button>
+        <button class="btn btn-primary" onclick="save()">Simpan</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const isAdmin = sess.role === 'admin';
+    if (isAdmin) document.querySelectorAll('.admin-only').forEach(e => e.style.display = '');
+
+    const TINGKAT_ORDER = ['Sekolah','Kecamatan','Kota','Provinsi','Nasional','Internasional'];
+    const TINGKAT_BADGE = {
+      Sekolah:'badge-outline', Kecamatan:'badge-info', Kota:'badge-info',
+      Provinsi:'badge-warning', Nasional:'badge-success', Internasional:'badge-white'
+    };
+    const POIN_DEFAULT = {Sekolah:50,Kecamatan:75,Kota:100,Provinsi:200,Nasional:500,Internasional:1000};
+
+    // Auto-fill poin when tingkat changes
+    document.addEventListener('change', e => {
+      if (e.target.id === 'fTingkatM') {
+        const p = document.getElementById('fPoin');
+        if (!p.value || POIN_DEFAULT[Object.keys(POIN_DEFAULT).find(k=>k!==e.target.value)]) {
+          p.value = POIN_DEFAULT[e.target.value] || 50;
+        }
+      }
+    });
+
+    function getTingkatLevel(tingkat) {
+      // Returns star level 1–6
+      return TINGKAT_ORDER.indexOf(tingkat) + 1 || 1;
+    }
+
+    function renderStats() {
+      const data = getData('prestasi');
+      const totalPoin = data.reduce((s,d)=>s+(+d.poin||0),0);
+      const nasionalUp = data.filter(d=>['Nasional','Internasional'].includes(d.tingkat)).length;
+      const best = data.reduce((b,d)=>(+d.poin||0)>(+b.poin||0)?d:b, {});
+      document.getElementById('statsGrid').innerHTML = `
+        <div class="stat-card hi"><div class="stat-label">Total Prestasi</div><div class="stat-value">${data.length}</div><div class="stat-sub">pencapaian</div></div>
+        <div class="stat-card"><div class="stat-label">Total Poin</div><div class="stat-value">${totalPoin}</div><div class="stat-sub">akumulasi</div></div>
+        <div class="stat-card"><div class="stat-label">Nasional+</div><div class="stat-value">${nasionalUp}</div><div class="stat-sub">tingkat nasional & internasional</div></div>
+        <div class="stat-card"><div class="stat-label">Prestasi Terbaik</div><div class="stat-value" style="font-size:14px;margin-top:4px">${best.judul||'-'}</div><div class="stat-sub">${best.nama||''}</div></div>
+      `;
+    }
+
+    function renderRanking() {
+      const prestasi = getData('prestasi');
+      const anggota = getData('anggota');
+      const poinMap = {};
+      anggota.forEach(a => poinMap[a.id] = {nama:a.nama, kelas:a.kelas, poin:0, count:0});
+      prestasi.forEach(p => {
+        if (poinMap[p.anggotaId]) { poinMap[p.anggotaId].poin += (+p.poin||0); poinMap[p.anggotaId].count++; }
+      });
+      const sorted = Object.values(poinMap).sort((a,b)=>b.poin-a.poin).filter(x=>x.poin>0).slice(0,6);
+      const maxPoin = sorted[0]?.poin || 1;
+
+      function getTingkatLabel(poin) {
+        if (poin >= 1000) return {label:'ELITE', cls:'badge-white'};
+        if (poin >= 500)  return {label:'NASIONAL', cls:'badge-success'};
+        if (poin >= 200)  return {label:'PROVINSI', cls:'badge-warning'};
+        if (poin >= 100)  return {label:'KOTA', cls:'badge-info'};
+        return {label:'LOKAL', cls:'badge-outline'};
+      }
+
+      document.getElementById('rankingList').innerHTML = sorted.length ? sorted.map((x,i) => {
+        const tl = getTingkatLabel(x.poin);
+        return `
+          <div style="margin-bottom:12px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-family:var(--mono);font-size:11px;color:var(--text3);width:16px">#${i+1}</span>
+                <span style="font-size:13px;font-weight:600">${x.nama}</span>
+                <span class="badge ${tl.cls}" style="font-size:8px">${tl.label}</span>
+              </div>
+              <span style="font-family:var(--mono);font-size:12px;color:var(--white)">${x.poin} poin</span>
+            </div>
+            <div style="height:4px;background:var(--bg4);border-radius:2px;overflow:hidden">
+              <div style="height:100%;width:${Math.round(x.poin/maxPoin*100)}%;background:var(--white);border-radius:2px;transition:width .6s ease"></div>
+            </div>
+          </div>`;
+      }).join('') : '<div class="empty"><p>Belum ada data poin</p></div>';
+
+      // Tingkat chart
+      const tingkatCount = {};
+      TINGKAT_ORDER.forEach(t => tingkatCount[t] = 0);
+      prestasi.forEach(p => { if (tingkatCount[p.tingkat]!==undefined) tingkatCount[p.tingkat]++; });
+      const maxCount = Math.max(...Object.values(tingkatCount), 1);
+      document.getElementById('tingkatChart').innerHTML = TINGKAT_ORDER.map(t => `
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <div style="font-size:10px;font-family:var(--mono);color:var(--text3);width:80px;text-align:right">${t}</div>
+          <div style="flex:1;height:20px;background:var(--bg4);border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${Math.round(tingkatCount[t]/maxCount*100)}%;background:var(--white);border-radius:3px;display:flex;align-items:center;justify-content:flex-end;padding-right:6px;font-family:var(--mono);font-size:10px;color:var(--bg);font-weight:700;min-width:${tingkatCount[t]>0?'24px':'0'};transition:width .6s ease">
+              ${tingkatCount[t]>0?tingkatCount[t]:''}
+            </div>
+          </div>
+          <span style="font-size:10px;font-family:var(--mono);color:var(--text3);width:12px">${tingkatCount[t]}</span>
+        </div>`).join('');
+    }
+
+    function render() {
+      const q = document.getElementById('q').value.toLowerCase();
+      const ft = document.getElementById('fTingkat').value;
+      let data = getData('prestasi').filter(d =>
+        (!q || d.judul.toLowerCase().includes(q) || d.nama.toLowerCase().includes(q))
+        && (!ft || d.tingkat === ft)
+      );
+      data = [...data].sort((a,b)=>(+b.poin||0)-(+a.poin||0));
+      document.getElementById('countLabel').textContent = `${data.length} prestasi`;
+      const tbody = document.getElementById('tbody');
+      if (!data.length) {
+        tbody.innerHTML = `<tr><td colspan="7"><div class="empty"><div class="empty-icon">🏆</div><p>Belum ada data prestasi</p></div></td></tr>`;
+        return;
+      }
+      tbody.innerHTML = data.map((d,i) => `
+        <tr>
+          <td style="color:var(--text3);font-family:var(--mono);font-size:11px">${i+1}</td>
+          <td><strong>${d.nama}</strong></td>
+          <td>${d.judul}</td>
+          <td style="font-family:var(--mono);font-size:11px;color:var(--text3)">${d.tanggal}</td>
+          <td>
+            <span class="badge ${TINGKAT_BADGE[d.tingkat]||'badge-outline'}">${d.tingkat}</span>
+            <div class="stars" style="margin-top:3px">${renderStars(getTingkatLevel(d.tingkat),6)}</div>
+          </td>
+          <td style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--warning)">${d.poin}</td>
+          <td class="admin-only">
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-ghost btn-sm" onclick="edit(${d.id})">Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="del(${d.id})">Hapus</button>
+            </div>
+          </td>
+        </tr>`).join('');
+      if (isAdmin) document.querySelectorAll('.admin-only').forEach(e => e.style.display = '');
+    }
+
+    function fillAnggota(val='') {
+      document.getElementById('fAnggota').innerHTML = getData('anggota').map(a =>
+        `<option value="${a.id}" data-nama="${a.nama}" ${a.id==val?'selected':''}>${a.nama} (${a.kelas})</option>`
+      ).join('');
+    }
+
+    function openAdd() {
+      document.getElementById('modalTitle').textContent = 'Tambah Prestasi';
+      document.getElementById('editId').value = '';
+      fillAnggota();
+      document.getElementById('fJudul').value = '';
+      document.getElementById('fTanggal').value = new Date().toISOString().split('T')[0];
+      document.getElementById('fTingkatM').value = 'Kota';
+      document.getElementById('fPoin').value = 100;
+      document.getElementById('fKet').value = '';
+      openModal('modalAdd');
+    }
+
+    function edit(id) {
+      const d = getData('prestasi').find(x=>x.id===id);
+      document.getElementById('modalTitle').textContent = 'Edit Prestasi';
+      document.getElementById('editId').value = id;
+      fillAnggota(d.anggotaId);
+      document.getElementById('fJudul').value = d.judul;
+      document.getElementById('fTanggal').value = d.tanggal;
+      document.getElementById('fTingkatM').value = d.tingkat;
+      document.getElementById('fPoin').value = d.poin;
+      document.getElementById('fKet').value = d.keterangan||'';
+      openModal('modalAdd');
+    }
+
+    function save() {
+      const sel = document.getElementById('fAnggota');
+      const anggotaId = parseInt(sel.value);
+      const nama = sel.options[sel.selectedIndex].dataset.nama;
+      const judul = document.getElementById('fJudul').value.trim();
+      const tanggal = document.getElementById('fTanggal').value;
+      const tingkat = document.getElementById('fTingkatM').value;
+      const poin = parseInt(document.getElementById('fPoin').value) || 0;
+      const keterangan = document.getElementById('fKet').value.trim();
+      if (!judul || !tanggal) { showToast('Judul dan tanggal wajib diisi', 'error'); return; }
+      const editId = parseInt(document.getElementById('editId').value) || null;
+      let data = getData('prestasi');
+      if (editId) {
+        data = data.map(d => d.id===editId ? {...d, anggotaId, nama, judul, tanggal, tingkat, poin, keterangan} : d);
+        showToast('Prestasi diperbarui ✓');
+      } else {
+        data.push({id:nextId(data), anggotaId, nama, judul, tanggal, tingkat, poin, keterangan});
+        showToast('Prestasi ditambahkan ✓');
+      }
+      saveData('prestasi', data);
+      closeModal('modalAdd');
+      render(); renderStats(); renderRanking();
+    }
+
+    function del(id) {
+      if (!confirm('Hapus prestasi ini?')) return;
+      saveData('prestasi', getData('prestasi').filter(d=>d.id!==id));
+      render(); renderStats(); renderRanking();
+      showToast('Prestasi dihapus', 'error');
+    }
+
+    renderStats(); renderRanking(); render();
+  </script>
+</body>
+</html>
